@@ -95,23 +95,3 @@
   font-size: 1.1rem;
   line-height: 1.6;
 }
-
-.teacher-link {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: rgba(255,255,255,0.95);
-  padding: 12px 24px;
-  border-radius: 12px;
-  text-decoration: none;
-  color: #FF6B9D;
-  font-weight: 600;
-  font-size: 1.1rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  transition: all 0.3s ease;
-}
-
-.teacher-link:hover {
-  background: white;
-  transform: scale(1.05);
-}

@@ -1021,6 +1021,8 @@
   cursor: pointer;
   transition: all 0.3s ease;
   background: #f9f9f9;
+  flex-wrap: nowrap;
+  align-items: flex-start;
 }
 
 .activity-item:hover {
@@ -1059,4 +1061,237 @@
   font-size: 0.9rem;
   margin-top: 10px;
   font-style: italic;
+}
+.activity-actions {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.edit-activity-btn,
+.delete-activity-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.edit-activity-btn:hover {
+  background: rgba(102, 126, 234, 0.1);
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.delete-activity-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.cancel-btn {
+  background: linear-gradient(135deg, #ff4757 0%, #ff6348 100%);
+  color: white;
+  border: none;
+  padding: 15px 20px;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 71, 87, 0.2);
+}
+
+.cancel-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(255, 71, 87, 0.3);
+}
+
+/* Evaluation Modal */
+.evaluation-modal {
+  z-index: 2000;
+}
+
+.evaluation-content {
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.evaluation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.evaluation-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.evaluation-item label {
+  font-weight: 600;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.score-selector {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.score-btn {
+  width: 50px;
+  height: 50px;
+  border: 2px solid #e0e0e0;
+  background: white;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: #666;
+}
+
+.score-btn:hover {
+  border-color: #FF6B9D;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(255, 107, 157, 0.2);
+}
+
+.score-btn.active {
+  background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%);
+  border-color: #FF6B9D;
+  color: white;
+  transform: scale(1.15);
+  box-shadow: 0 4px 15px rgba(255, 107, 157, 0.4);
+}
+
+.evaluation-item textarea {
+  padding: 12px 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+  transition: all 0.3s ease;
+}
+
+.evaluation-item textarea:focus {
+  outline: none;
+  border-color: #FF6B9D;
+  box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.1);
+}
+
+.evaluation-summary {
+  background: linear-gradient(135deg, #FFE5B4 0%, #FFD6E8 100%);
+  padding: 20px;
+  border-radius: 15px;
+  margin-top: 10px;
+}
+
+.total-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.total-score .score-value {
+  font-size: 2rem;
+  color: #FF6B9D;
+  font-weight: 700;
+}
+
+.evaluation-actions {
+  display: flex;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.cancel-eval-btn,
+.export-pdf-btn {
+  flex: 1;
+  padding: 15px 25px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.cancel-eval-btn {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  color: white;
+}
+
+.cancel-eval-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(107, 114, 128, 0.3);
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+}
+
+.export-pdf-btn {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+}
+
+.export-pdf-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .evaluation-content {
+    width: 95%;
+    max-height: 85vh;
+  }
+
+  .score-selector {
+    gap: 8px;
+  }
+
+  .score-btn {
+    width: 45px;
+    height: 45px;
+    font-size: 1.1rem;
+  }
+
+  .total-score {
+    font-size: 1.1rem;
+  }
+
+  .total-score .score-value {
+    font-size: 1.6rem;
+  }
+
+  .evaluation-actions {
+    flex-direction: column;
+  }
+
+  .cancel-eval-btn,
+  .export-pdf-btn {
+    width: 100%;
+  }
 }

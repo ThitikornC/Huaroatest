@@ -268,8 +268,15 @@
   margin-bottom: 32px;
 }
 
-.play-again-btn {
-  background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%);
+.completion-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.play-again-btn,
+.evaluate-btn {
   color: white;
   border: none;
   padding: 16px 40px;
@@ -279,11 +286,26 @@
   cursor: pointer;
   transition: all 0.3s ease;
   min-height: 56px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.play-again-btn {
+  background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%);
 }
 
 .play-again-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(255, 107, 157, 0.4);
+}
+
+.evaluate-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.evaluate-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
 }
 
 /* Touch-friendly for mobile */
@@ -342,6 +364,18 @@
   
   .completion-message p {
     font-size: 1.2rem;
+  }
+
+  .completion-buttons {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .play-again-btn,
+  .evaluate-btn {
+    min-width: 100%;
+    padding: 14px 30px;
+    font-size: 1.1rem;
   }
 }
 

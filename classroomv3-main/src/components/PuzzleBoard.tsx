@@ -14,6 +14,8 @@ interface PuzzlePiece {
 interface PuzzleBoardProps {
   imageUrl: string
   difficulty: 'easy' | 'medium' | 'hard'
+  onComplete?: () => void
+  onEvaluate?: () => void
 }
 
 const GRID_SIZE = {
@@ -22,7 +24,7 @@ const GRID_SIZE = {
   hard: 5
 }
 
-function PuzzleBoard({ imageUrl, difficulty }: PuzzleBoardProps) {
+function PuzzleBoard({ imageUrl, difficulty, onComplete, onEvaluate }: PuzzleBoardProps) {
   const [pieces, setPieces] = useState<PuzzlePiece[]>([])
   const [showHint, setShowHint] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
@@ -136,6 +138,11 @@ function PuzzleBoard({ imageUrl, difficulty }: PuzzleBoardProps) {
       )
       
       if (allCorrect) {
+        // Call onComplete callback ก่อน เพื่อให้จับภาพก่อนแสดง modal
+        if (onComplete) {
+          onComplete()
+        }
+        
         setTimeout(() => {
           setIsComplete(true)
           audioManager.playEndgame()
@@ -261,15 +268,25 @@ function PuzzleBoard({ imageUrl, difficulty }: PuzzleBoardProps) {
             <div className="completion-icon">🎉</div>
             <h2>ยินดีด้วย!</h2>
             <p>คุณต่อจิ๊กซอว์สำเร็จแล้ว! 🎊</p>
-            <button
-              className="play-again-btn"
-              onClick={() => {
-                sliceImage()
-                setIsComplete(false)
-              }}
-            >
-              เล่นอีกครั้ง
-            </button>
+            <div className="completion-buttons">
+              <button
+                className="play-again-btn"
+                onClick={() => {
+                  sliceImage()
+                  setIsComplete(false)
+                }}
+              >
+                🔄 เล่นอีกครั้ง
+              </button>
+              {onEvaluate && (
+                <button
+                  className="evaluate-btn"
+                  onClick={onEvaluate}
+                >
+                  📊 ประเมินผล
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

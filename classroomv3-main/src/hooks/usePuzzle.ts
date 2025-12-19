@@ -23,7 +23,7 @@ interface UsePuzzleReturn {
   error: string | null
   toast: { message: string; type: 'success' | 'error' | 'warning' } | null
   setDifficulty: (level: DifficultyLevel) => void
-  handleImageUpload: (file: File) => Promise<void>
+  handleImageUpload: (file: File | null, directUrl?: string) => Promise<void>
   handleConfigSelect: (configId: string) => void
   handleStart: () => void
   setStarted: (started: boolean) => void
@@ -98,8 +98,20 @@ export const usePuzzle = (): UsePuzzleReturn => {
     return null
   }
 
-  const handleImageUpload = useCallback(async (file: File): Promise<void> => {
+  const handleImageUpload = useCallback(async (file: File | null, directUrl?: string): Promise<void> => {
     setError(null)
+    
+    // ถ้ามี directUrl ให้ใช้เลย (สำหรับโหลดจากกิจกรรมที่บันทึก)
+    if (directUrl) {
+      setImageUrl(directUrl)
+      setSelectedConfig('')
+      return
+    }
+    
+    // ต้องมี file ถ้าไม่มี directUrl
+    if (!file) {
+      return
+    }
     
     // Validate file
     const validationError = validateImage(file)

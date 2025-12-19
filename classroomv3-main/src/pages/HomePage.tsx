@@ -36,10 +36,6 @@ function HomePage() {
 
   return (
     <div className="home-page">
-      <Link to="/teacher" className="teacher-link">
-        👩‍🏫 จัดการห้องเรียน
-      </Link>
-      
       <h1 className="home-title">🎨 สตูดิโอห้องเรียนมหาสนุก 🎮</h1>
       
       <div className="game-cards">

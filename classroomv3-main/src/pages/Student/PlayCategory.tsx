@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { DndProvider, useDrag, useDrop } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { TouchBackend } from 'react-dnd-touch-backend'
@@ -6,6 +6,8 @@ import { MouseTransition, TouchTransition } from 'react-dnd-multi-backend'
 import { MultiBackend } from 'react-dnd-multi-backend'
 import { getCategories, getCategoryItems, Category, CategoryItem } from '../../services/storage'
 import { audioManager } from '../../utils/audio'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 import './PlayCategory.css'
 
 // Multi-backend configuration
@@ -52,15 +54,29 @@ function PlayCategory() {
   const [testerName, setTesterName] = useState('')
   const [savedActivities, setSavedActivities] = useState<any[]>([])
   const [showActivityList, setShowActivityList] = useState(false)
+  const [editingActivityId, setEditingActivityId] = useState<number | null>(null)
 
   // Add game data states
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState('#FF6B9D')
+  const [newCategoryBackgroundImage, setNewCategoryBackgroundImage] = useState('')
   const [newItemName, setNewItemName] = useState('')
   const [newItemCategory, setNewItemCategory] = useState('')
   const [newItemImage, setNewItemImage] = useState('')
   const [showAddCategory, setShowAddCategory] = useState(false)
   const [showAddItem, setShowAddItem] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+
+  // Evaluation states
+  const [showEvaluation, setShowEvaluation] = useState(false)
+  const [evaluation, setEvaluation] = useState({
+    understanding: 5,
+    accuracy: 5,
+    neatness: 5,
+    completeness: 5
+  })
+  const [categoryCompletedImage, setCategoryCompletedImage] = useState('')
 
   useEffect(() => {
     loadData()
@@ -154,8 +170,30 @@ function PlayCategory() {
           )
           
           if (allCorrect) {
-            setCompleted(true)
-            audioManager.playEndgame()
+            // จับภาพกระดานก่อนแสดง completion modal
+            const captureAndComplete = async () => {
+              try {
+                const gameBoard = document.querySelector('.game-board')
+                if (gameBoard) {
+                  const canvas = await html2canvas(gameBoard as HTMLElement, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#ffffff'
+                  })
+                  const imageData = canvas.toDataURL('image/png')
+                  setCategoryCompletedImage(imageData)
+                }
+              } catch (error) {
+                console.error('Error capturing screenshot:', error)
+              }
+              
+              // แสดง completion modal หลังจับภาพเสร็จ
+              setCompleted(true)
+              audioManager.playEndgame()
+            }
+            
+            captureAndComplete()
           }
         }
         
@@ -207,6 +245,12 @@ function PlayCategory() {
   }
 
   const handleSaveActivity = () => {
+    // ถ้าอยู่ในโหมดแก้ไข
+    if (editingActivityId) {
+      handleUpdateActivity()
+      return
+    }
+
     if (!weekNumber) {
       alert('กรุณากรอกสัปดาห์ที่')
       return
@@ -249,7 +293,248 @@ function PlayCategory() {
     audioManager.playClick()
   }
 
+  const handleDeleteActivity = (activityId: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('ต้องการลบกิจกรรมนี้?')) return
+    
+    const updated = savedActivities.filter(a => a.id !== activityId)
+    setSavedActivities(updated)
+    localStorage.setItem('categoryActivities', JSON.stringify(updated))
+    audioManager.playClick()
+  }
+
+  const handleEditActivity = (activity: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingActivityId(activity.id)
+    handleLoadActivity(activity)
+  }
+
+  const handleUpdateActivity = () => {
+    if (!editingActivityId) return
+    if (!weekNumber) {
+      alert('กรุณากรอกสัปดาห์ที่')
+      return
+    }
+
+    const updated = savedActivities.map(a => 
+      a.id === editingActivityId ? {
+        ...a,
+        weekNumber,
+        learningSubject,
+        learningUnit,
+        responsibleTeacher,
+        testerName,
+        categories: categories,
+        items: items.map(i => ({ ...i, placed: false, placedInCategoryId: undefined })),
+        categoriesCount: categories.length,
+        itemsCount: items.length,
+      } : a
+    )
+
+    setSavedActivities(updated)
+    localStorage.setItem('categoryActivities', JSON.stringify(updated))
+    setEditingActivityId(null)
+    alert('อัปเดตกิจกรรมสำเร็จ!')
+    audioManager.playClick()
+  }
+
+  const handleOpenEvaluation = async () => {
+    // ตรวจสอบว่ากรอกข้อมูลครบหรือไม่
+    if (!weekNumber) {
+      alert('ไม่พบแบบประเมิน\n\nกรุณากรอกข้อมูลกิจกรรม (สัปดาห์ที่) ก่อนทำแบบประเมิน')
+      return
+    }
+
+    try {
+      // สร้าง screenshot ของกระดานเกม
+      const gameBoard = document.querySelector('.game-board')
+      
+      if (gameBoard) {
+        const canvas = await html2canvas(gameBoard as HTMLElement, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        })
+        const imageData = canvas.toDataURL('image/png')
+        setCategoryCompletedImage(imageData)
+      }
+      
+      setShowEvaluation(true)
+      audioManager.playClick()
+    } catch (error) {
+      console.error('Error capturing screenshot:', error)
+      // ยังคงแสดงแบบประเมินแม้จะจับภาพหน้าจอไม่ได้
+      setShowEvaluation(true)
+      audioManager.playClick()
+    }
+  }
+
+  const handleExportPDF = async () => {
+    // ตรวจสอบว่ากรอกข้อมูลครบหรือไม่
+    if (!weekNumber) {
+      alert('กรุณากรอกข้อมูลกิจกรรม (สัปดาห์ที่) ก่อนส่งออก PDF')
+      return
+    }
+
+    try {
+      // คำนวณคะแนนรวม
+      const totalScore = evaluation.understanding + evaluation.accuracy + 
+                        evaluation.neatness + evaluation.completeness
+      const averageScore = (totalScore / 4).toFixed(1)
+
+      // สร้าง HTML template
+      const reportElement = document.createElement('div')
+      reportElement.style.cssText = `
+        width: 794px;
+        background: white;
+        padding: 25px 30px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        position: absolute;
+        left: -9999px;
+        top: 0;
+      `
+
+      reportElement.innerHTML = `
+        <div style="background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%); padding: 18px; border-radius: 12px; text-align: center; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+          <h1 style="color: white; margin: 0 0 6px 0; font-size: 26px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">🗂️ แบบประเมินกิจกรรมจัดหมวดหมู่</h1>
+          <p style="color: white; margin: 0; font-size: 13px; opacity: 0.95;">Category Activity Evaluation Report</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #e9ecef;">
+            <h2 style="color: #FF6B9D; margin: 0 0 10px 0; font-size: 15px; border-bottom: 2px solid #FF6B9D; padding-bottom: 6px;">📋 ข้อมูลกิจกรรม</h2>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>สัปดาห์ที่:</strong> ${weekNumber || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>สาระการเรียนรู้:</strong> ${learningSubject || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>หน่วยการเรียนรู้:</strong> ${learningUnit || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>ครูผู้รับผิดชอบ:</strong> ${responsibleTeacher || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>ผู้ทดสอบ:</strong> ${testerName || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>วันที่:</strong> ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>จำนวนหมวดหมู่:</strong> ${categories.length} หมวด</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>จำนวนรายการ:</strong> ${items.length} รายการ</p>
+          </div>
+
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #e9ecef;">
+            <h2 style="color: #FF6B9D; margin: 0 0 10px 0; font-size: 15px; border-bottom: 2px solid #FF6B9D; padding-bottom: 6px;">การประเมิน</h2>
+            ${[
+              { label: 'การจัดหมวดหมู่ที่ถูกต้อง', score: evaluation.understanding },
+              { label: 'ความเข้าใจเนื้อหา', score: evaluation.accuracy },
+              { label: 'ความคล่องแคล่ว', score: evaluation.neatness },
+              { label: 'ความสมบูรณ์', score: evaluation.completeness }
+            ].map(item => {
+              const percentage = (item.score / 5) * 100
+              const color = item.score >= 4 ? '#4CAF50' : item.score >= 3 ? '#FFC107' : '#f44336'
+              return `
+                <div style="margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span style="font-weight: 600; color: #333; font-size: 11px;">${item.label}</span>
+                    <span style="font-weight: 700; color: ${color}; font-size: 12px;">${item.score}/5</span>
+                  </div>
+                  <div style="background: #e9ecef; height: 18px; border-radius: 9px; overflow: hidden;">
+                    <div style="background: ${color}; width: ${percentage}%; height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px;">
+                      <span style="color: white; font-size: 10px; font-weight: 600;">${percentage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                </div>
+              `
+            }).join('')}
+            
+            <div style="background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%); padding: 12px; border-radius: 10px; margin-top: 12px; text-align: center; box-shadow: 0 3px 10px rgba(255,107,157,0.3);">
+              <span style="color: white; font-size: 13px; font-weight: 600;">คะแนนเฉลี่ย: </span>
+              <span style="color: white; font-size: 24px; font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">${averageScore}/5</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+          <h2 style="color: #FF6B9D; margin: 0 0 10px 0; font-size: 16px; border-bottom: 2px solid #FF6B9D; padding-bottom: 6px;">🖼️ ภาพกิจกรรม</h2>
+          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 12px; border: 2px solid #e9ecef;">
+            ${categoryCompletedImage ? 
+              `<img src="${categoryCompletedImage}" style="max-width: 100%; max-height: 400px; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />` : 
+              `<p style="color: #6c757d; padding: 40px; margin: 0;">ไม่มีภาพกิจกรรม</p>`
+            }
+          </div>
+        </div>
+
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px dashed #dee2e6;">
+          <div style="text-align: center;">
+            <p style="margin: 0 0 5px 0; color: #333; font-size: 11px;">ลงชื่อ ..............................................</p>
+            <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 10px;">ครูผู้รับผิดชอบ</p>
+            <p style="margin: 0; color: #333; font-size: 11px;">( ${responsibleTeacher || '............................................'} )</p>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid #dee2e6;">
+          <p style="margin: 0; color: #adb5bd; font-size: 9px;">สร้างโดยระบบ Classroom Games | ${new Date().toLocaleString('th-TH')}</p>
+        </div>
+      `
+
+      document.body.appendChild(reportElement)
+
+      // แปลง HTML เป็นรูปภาพ
+      const canvas = await html2canvas(reportElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      })
+
+      document.body.removeChild(reportElement)
+
+      // สร้าง PDF
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = pdfWidth
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width
+      
+      if (imgHeight > pdfHeight) {
+        let heightLeft = imgHeight
+        let position = 0
+        
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pdfHeight
+        
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight
+          pdf.addPage()
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+          heightLeft -= pdfHeight
+        }
+      } else {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      }
+
+      const fileName = `แบบประเมินจัดหมวดหมู่-สัปดาห์${weekNumber || 'X'}-${Date.now()}.pdf`
+      pdf.save(fileName)
+
+      audioManager.playSuccess()
+      alert('ส่งออก PDF เรียบร้อย! 🎉')
+      setShowEvaluation(false)
+      
+      // รีเซ็ตค่าประเมิน
+      setEvaluation({
+        understanding: 5,
+        accuracy: 5,
+        neatness: 5,
+        completeness: 5
+      })
+
+    } catch (error) {
+      console.error('Error exporting PDF:', error)
+      alert('เกิดข้อผิดพลาดในการส่งออก PDF กรุณาลองใหม่อีกครั้ง')
+    }
+  }
+
   const handleAddCategory = () => {
+    // ถ้าอยู่ในโหมดแก้ไข
+    if (editingCategoryId) {
+      handleUpdateCategory()
+      return
+    }
+
     if (!newCategoryName.trim()) {
       alert('กรุณากรอกชื่อหมวดหมู่')
       return
@@ -259,17 +544,58 @@ function PlayCategory() {
       id: Date.now().toString(),
       name: newCategoryName.trim(),
       color: newCategoryColor,
+      backgroundImage: newCategoryBackgroundImage || undefined,
       order: categories.length, // เพิ่ม order เป็นลำดับถัดไป
     }
 
     setCategories([...categories, newCat])
     setNewCategoryName('')
     setNewCategoryColor('#FF6B9D')
+    setNewCategoryBackgroundImage('')
+    setShowAddCategory(false)
+    audioManager.playClick()
+  }
+
+  const handleEditCategory = (cat: Category) => {
+    setEditingCategoryId(cat.id)
+    setNewCategoryName(cat.name)
+    setNewCategoryColor(cat.color)
+    setNewCategoryBackgroundImage(cat.backgroundImage || '')
+    setShowAddCategory(true)
+    audioManager.playClick()
+  }
+
+  const handleUpdateCategory = () => {
+    if (!editingCategoryId) return
+    if (!newCategoryName.trim()) {
+      alert('กรุณากรอกชื่อหมวดหมู่')
+      return
+    }
+
+    setCategories(categories.map(c => 
+      c.id === editingCategoryId ? {
+        ...c,
+        name: newCategoryName.trim(),
+        color: newCategoryColor,
+        backgroundImage: newCategoryBackgroundImage || undefined,
+      } : c
+    ))
+
+    setNewCategoryName('')
+    setNewCategoryColor('#FF6B9D')
+    setNewCategoryBackgroundImage('')
+    setEditingCategoryId(null)
     setShowAddCategory(false)
     audioManager.playClick()
   }
 
   const handleAddItem = () => {
+    // ถ้าอยู่ในโหมดแก้ไข
+    if (editingItemId) {
+      handleUpdateItem()
+      return
+    }
+
     if (!newItemName.trim()) {
       alert('กรุณากรอกชื่อรายการ')
       return
@@ -295,6 +621,43 @@ function PlayCategory() {
     audioManager.playClick()
   }
 
+  const handleEditItem = (item: PlayItem) => {
+    setEditingItemId(item.id)
+    setNewItemName(item.name)
+    setNewItemCategory(item.categoryId)
+    setNewItemImage(item.imageUrl || '')
+    setShowAddItem(true)
+    audioManager.playClick()
+  }
+
+  const handleUpdateItem = () => {
+    if (!editingItemId) return
+    if (!newItemName.trim()) {
+      alert('กรุณากรอกชื่อรายการ')
+      return
+    }
+    if (!newItemCategory) {
+      alert('กรุณาเลือกหมวดหมู่')
+      return
+    }
+
+    setItems(items.map(i => 
+      i.id === editingItemId ? {
+        ...i,
+        name: newItemName.trim(),
+        categoryId: newItemCategory,
+        imageUrl: newItemImage || undefined,
+      } : i
+    ))
+
+    setNewItemName('')
+    setNewItemImage('')
+    setNewItemCategory('')
+    setEditingItemId(null)
+    setShowAddItem(false)
+    audioManager.playClick()
+  }
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -303,6 +666,18 @@ function PlayCategory() {
     reader.onload = (event) => {
       const url = event.target?.result as string
       setNewItemImage(url)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleCategoryBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const url = event.target?.result as string
+      setNewCategoryBackgroundImage(url)
     }
     reader.readAsDataURL(file)
   }
@@ -399,7 +774,15 @@ function PlayCategory() {
                 <h3 style={{ margin: 0 }}>หมวดหมู่ ({categories.length})</h3>
                 <button 
                   className="add-data-btn"
-                  onClick={() => setShowAddCategory(!showAddCategory)}
+                  onClick={() => {
+                    if (showAddCategory && editingCategoryId) {
+                      setEditingCategoryId(null)
+                      setNewCategoryName('')
+                      setNewCategoryColor('#FF6B9D')
+                      setNewCategoryBackgroundImage('')
+                    }
+                    setShowAddCategory(!showAddCategory)
+                  }}
                 >
                   {showAddCategory ? '✕ ยกเลิก' : '+ เพิ่มหมวดหมู่'}
                 </button>
@@ -414,14 +797,46 @@ function PlayCategory() {
                     placeholder="ชื่อหมวดหมู่..."
                     className="form-input"
                   />
-                  <input
-                    type="color"
-                    value={newCategoryColor}
-                    onChange={(e) => setNewCategoryColor(e.target.value)}
-                    className="color-input"
-                  />
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: '0.9rem', color: '#666' }}>สี:</label>
+                    <input
+                      type="color"
+                      value={newCategoryColor}
+                      onChange={(e) => setNewCategoryColor(e.target.value)}
+                      className="color-input"
+                    />
+                  </div>
+                  <div className="image-upload-section">
+                    <label className="upload-label-small">
+                      {newCategoryBackgroundImage ? (
+                        <div className="image-preview-small">
+                          <img src={newCategoryBackgroundImage} alt="Preview" />
+                          <span className="change-text">คลิกเพื่อเปลี่ยนรูปพื้นหลัง</span>
+                        </div>
+                      ) : (
+                        <div className="upload-placeholder-small">
+                          📸 เลือกรูปพื้นหลัง (ไม่บังคับ)
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleCategoryBackgroundUpload}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    {newCategoryBackgroundImage && (
+                      <button 
+                        onClick={() => setNewCategoryBackgroundImage('')}
+                        className="remove-image-btn"
+                        type="button"
+                      >
+                        ✕ ลบรูป
+                      </button>
+                    )}
+                  </div>
                   <button onClick={handleAddCategory} className="confirm-btn">
-                    ✓ เพิ่ม
+                    {editingCategoryId ? '✓ อัปเดต' : '✓ เพิ่ศ'}
                   </button>
                 </div>
               )}
@@ -429,13 +844,31 @@ function PlayCategory() {
               <div className="data-list">
                 {categories.map(cat => (
                   <div key={cat.id} className="data-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                       <div style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: cat.color }} />
+                      {cat.backgroundImage && (
+                        <div className="category-thumb">
+                          <img src={cat.backgroundImage} alt={cat.name} />
+                        </div>
+                      )}
                       <span>{cat.name}</span>
                     </div>
-                    <button onClick={() => handleDeleteCategory(cat.id)} className="delete-btn">
-                      🗑️
-                    </button>
+                    <div className="item-actions">
+                      <button 
+                        onClick={() => handleEditCategory(cat)} 
+                        className="edit-btn"
+                        title="แก้ไขหมวดหมู่"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteCategory(cat.id)} 
+                        className="delete-btn"
+                        title="ลบหมวดหมู่"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {categories.length === 0 && (
@@ -450,7 +883,15 @@ function PlayCategory() {
                 <h3 style={{ margin: 0 }}>รายการ ({items.length})</h3>
                 <button 
                   className="add-data-btn"
-                  onClick={() => setShowAddItem(!showAddItem)}
+                  onClick={() => {
+                    if (showAddItem && editingItemId) {
+                      setEditingItemId(null)
+                      setNewItemName('')
+                      setNewItemImage('')
+                      setNewItemCategory('')
+                    }
+                    setShowAddItem(!showAddItem)
+                  }}
                   disabled={categories.length === 0}
                   title={categories.length === 0 ? 'กรุณาเพิ่มหมวดหมู่ก่อน' : ''}
                 >
@@ -495,7 +936,7 @@ function PlayCategory() {
                     )}
                   </div>
                   <button onClick={handleAddItem} className="confirm-btn">
-                    ✓ เพิ่ม
+                    {editingItemId ? '✓ อัปเดต' : '✓ เพิ่ม'}
                   </button>
                 </div>
               )}
@@ -533,9 +974,22 @@ function PlayCategory() {
                           </span>
                         )}
                       </div>
-                      <button onClick={() => handleDeleteItem(item.id)} className="delete-btn">
-                        🗑️
-                      </button>
+                      <div className="item-actions">
+                        <button 
+                          onClick={() => handleEditItem(item)} 
+                          className="edit-btn"
+                          title="แก้ไขรายการ"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteItem(item.id)} 
+                          className="delete-btn"
+                          title="ลบรายการ"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
@@ -559,10 +1013,27 @@ function PlayCategory() {
             <button 
               className="action-btn save-btn"
               onClick={handleSaveActivity}
-              title="บันทึกข้อมูลกิจกรรม"
+              title={editingActivityId ? "อัปเดตกิจกรรม" : "บันทึกข้อมูลกิจกรรม"}
             >
-              📌 บันทึกกิจกรรม
+              {editingActivityId ? '💾 อัปเดตกิจกรรม' : '📌 บันทึกกิจกรรม'}
             </button>
+            {editingActivityId && (
+              <button 
+                className="action-btn cancel-btn"
+                onClick={() => {
+                  setEditingActivityId(null)
+                  setWeekNumber('')
+                  setLearningSubject('')
+                  setLearningUnit('')
+                  setResponsibleTeacher('')
+                  setTesterName('')
+                  audioManager.playClick()
+                }}
+                title="ยกเลิกการแก้ไข"
+              >
+                ✕ ยกเลิก
+              </button>
+            )}
             <button 
               className="action-btn select-btn"
               onClick={() => setShowActivityList(true)}
@@ -579,30 +1050,12 @@ function PlayCategory() {
                 <h2>ยังไม่มีข้อมูล</h2>
                 <p>ครูยังไม่ได้สร้างหมวดหมู่และรายการ</p>
                 <p>กรุณาแจ้งครูเพื่อเพิ่มข้อมูลในหน้า <strong>จัดการเกมจัดหมวดหมู่</strong></p>
-                <button 
-                  className="manage-btn"
-                  onClick={() => window.location.href = '/studio/manage-category'}
-                  style={{
-                    marginTop: '20px',
-                    padding: '12px 24px',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '1.1rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease'
-                  }}
-                >
-                  🎯 ไปหน้าจัดการเกม
-                </button>
               </div>
             </div>
           ) : (
             <>
               <div className="info-banner">
-                ✅ พบ {categories.length} หมวดหมู่ และ {items.length} รายการ
+                พบ {categories.length} หมวดหมู่ และ {items.length} รายการ
               </div>
 
               <div className="setup-card">
@@ -630,21 +1083,31 @@ function PlayCategory() {
                     <div 
                       key={cat.id} 
                       className="preview-category-card"
-                      style={{ borderLeftColor: cat.color }}
+                      style={{ 
+                        borderLeftColor: cat.color,
+                        backgroundImage: cat.backgroundImage ? `linear-gradient(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.85)), url(${cat.backgroundImage})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
                     >
                       <div 
                         className="preview-color-dot"
                         style={{ backgroundColor: cat.color }}
                       />
                       <span>{cat.name}</span>
+                      {cat.backgroundImage && (
+                        <span className="has-bg-indicator">🖼️</span>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              <button className="start-btn" onClick={handleStart}>
-                🎮 เริ่มเล่น!
-              </button>
+              <div className="action-buttons">
+                <button className="start-btn" onClick={handleStart}>
+                  🎮 เริ่มเล่น!
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -668,10 +1131,27 @@ function PlayCategory() {
                     >
                       <div className="activity-info">
                         <h3>สัปดาห์ที่ {activity.weekNumber}</h3>
-                        <p><strong>สาระ:</strong> {activity.learningSubject}</p>
-                        <p><strong>หน่วย:</strong> {activity.learningUnit}</p>
-                        <p><strong>ครู:</strong> {activity.responsibleTeacher}</p>
-                        <p><strong>ผู้ทดสอบ:</strong> {activity.testerName}</p>
+                        <p><strong>สาระ:</strong> {activity.learningSubject || '-'}</p>
+                        <p><strong>หน่วย:</strong> {activity.learningUnit || '-'}</p>
+                        <p><strong>ครู:</strong> {activity.responsibleTeacher || '-'}</p>
+                        <p><strong>ผู้ทดสอบ:</strong> {activity.testerName || '-'}</p>
+                        <p><strong>หมวดหมู่:</strong> {activity.categoriesCount} | <strong>รายการ:</strong> {activity.itemsCount}</p>
+                      </div>
+                      <div className="activity-actions">
+                        <button 
+                          className="edit-activity-btn"
+                          onClick={(e) => handleEditActivity(activity, e)}
+                          title="แก้ไขกิจกรรม"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="delete-activity-btn"
+                          onClick={(e) => handleDeleteActivity(activity.id, e)}
+                          title="ลบกิจกรรม"
+                        >
+                          🗑️
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -680,11 +1160,6 @@ function PlayCategory() {
             </div>
           </div>
         )}
-
-        <div className="mascot">
-          <div className="mascot-avatar">🦊</div>
-          <div className="mascot-speech">จัดหมวดหมู่ให้ถูกต้องนะ!</div>
-        </div>
       </div>
     )
   }
@@ -725,10 +1200,10 @@ function PlayCategory() {
 
           {/* Items Tray */}
           <div className="items-tray">
-            <h3>🧩 รายการ ({getUnplacedItems().length}/{items.length})</h3>
+            <h3>รายการ ({getUnplacedItems().length}/{items.length})</h3>
             <div className="tray-items">
               {getUnplacedItems().length === 0 ? (
-                <p className="tray-empty">✅ วางครบทุกรายการแล้ว!</p>
+                <p className="tray-empty">วางครบทุกรายการแล้ว!</p>
               ) : (
                 getUnplacedItems().map(item => (
                   <DraggableItem
@@ -750,13 +1225,27 @@ function PlayCategory() {
               <div className="completion-icon">🎉</div>
               <h2>ยินดีด้วย!</h2>
               {/* completion score hidden per request */}
-              <button className="play-again-btn" onClick={handleStart}>
-                เล่นอีกครั้ง
-              </button>
+              <div className="completion-buttons">
+                <button className="play-again-btn" onClick={handleStart}>
+                  เล่นอีกครั้ง
+                </button>
+                <button className="evaluate-btn" onClick={handleOpenEvaluation}>
+                  ประเมินผล
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* Evaluation Modal */}
+      <EvaluationModal
+        show={showEvaluation}
+        onClose={() => setShowEvaluation(false)}
+        evaluation={evaluation}
+        onEvaluationChange={(field, value) => setEvaluation({...evaluation, [field]: value})}
+        onExport={handleExportPDF}
+      />
     </DndProvider>
   )
 }
@@ -924,6 +1413,111 @@ function PlacedItem({ item, categoryColor, onRemove }: PlacedItemProps) {
       >
         ✕
       </button>
+    </div>
+  )
+}
+
+// Evaluation Modal Component
+function EvaluationModal({ 
+  show, 
+  onClose, 
+  evaluation, 
+  onEvaluationChange, 
+  onExport 
+}: { 
+  show: boolean
+  onClose: () => void
+  evaluation: any
+  onEvaluationChange: (field: string, value: number) => void
+  onExport: () => void
+}) {
+  if (!show) return null
+
+  return (
+    <div className="evaluation-modal">
+      <div className="evaluation-content">
+        <h2 style={{ color: '#FF6B9D', marginBottom: '24px', textAlign: 'center', fontSize: '24px' }}>
+          ประเมินผลกิจกรรม
+        </h2>
+        
+        <div className="evaluation-grid">
+          <div className="evaluation-item">
+            <label>การจัดหมวดหมู่ที่ถูกต้อง</label>
+            <div className="score-selector">
+              {[1, 2, 3, 4, 5].map((score) => (
+                <button
+                  key={score}
+                  className={`score-btn ${evaluation.understanding === score ? 'active' : ''}`}
+                  onClick={() => onEvaluationChange('understanding', score)}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="evaluation-item">
+            <label>ความเข้าใจเนื้อหา</label>
+            <div className="score-selector">
+              {[1, 2, 3, 4, 5].map((score) => (
+                <button
+                  key={score}
+                  className={`score-btn ${evaluation.accuracy === score ? 'active' : ''}`}
+                  onClick={() => onEvaluationChange('accuracy', score)}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="evaluation-item">
+            <label>ความคล่องแคล่ว</label>
+            <div className="score-selector">
+              {[1, 2, 3, 4, 5].map((score) => (
+                <button
+                  key={score}
+                  className={`score-btn ${evaluation.neatness === score ? 'active' : ''}`}
+                  onClick={() => onEvaluationChange('neatness', score)}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="evaluation-item">
+            <label>ความสมบูรณ์</label>
+            <div className="score-selector">
+              {[1, 2, 3, 4, 5].map((score) => (
+                <button
+                  key={score}
+                  className={`score-btn ${evaluation.completeness === score ? 'active' : ''}`}
+                  onClick={() => onEvaluationChange('completeness', score)}
+                >
+                  {score}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="average-score">
+          <span>คะแนนเฉลี่ย: </span>
+          <span className="score-value">
+            {((evaluation.understanding + evaluation.accuracy + evaluation.neatness + evaluation.completeness) / 4).toFixed(1)}/5
+          </span>
+        </div>
+
+        <div className="evaluation-actions">
+          <button className="btn-export-pdf" onClick={onExport}>
+            📄 ส่งออก PDF
+          </button>
+          <button className="btn-close-eval" onClick={onClose}>
+            ปิด
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

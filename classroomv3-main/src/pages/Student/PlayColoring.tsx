@@ -4,6 +4,8 @@ import Toolbox from '../../components/Toolbox'
 import { audioManager } from '../../utils/audio'
 import { getImages } from '../../services/storage'
 import { defaultColoringImages } from '../../config/defaultImages'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 import './PlayColoring.css'
 
 interface LineData {
@@ -39,6 +41,16 @@ function PlayColoring() {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null)
   const [savedActivities, setSavedActivities] = useState<any[]>([])
   const [showActivityList, setShowActivityList] = useState(false)
+  const [editingActivityId, setEditingActivityId] = useState<number | null>(null)
+  
+  // Evaluation states
+  const [showEvaluation, setShowEvaluation] = useState(false)
+  const [evaluation, setEvaluation] = useState({
+    creativity: 5,
+    colorChoice: 5,
+    neatness: 5,
+    completeness: 5
+  })
 
   useEffect(() => {
     // Load images from teacher and default images
@@ -314,14 +326,170 @@ function PlayColoring() {
   }
 
   const handleSave = () => {
-    if (stageRef.current) {
-      const uri = stageRef.current.toDataURL()
-      const link = document.createElement('a')
-      link.download = `my-drawing-${Date.now()}.png`
-      link.href = uri
-      link.click()
+    // แทนที่การบันทึกแบบเดิม ให้เปิดฟอร์มประเมิน
+    setShowEvaluation(true)
+    audioManager.playClick()
+  }
+
+  const handleExportPDF = async () => {
+    if (!stageRef.current) return
+
+    try {
+      // 1. บันทึกภาพผลงานจาก canvas
+      const artworkDataUrl = stageRef.current.toDataURL()
+
+      // 2. คำนวณคะแนนรวม
+      const totalScore = evaluation.creativity + evaluation.colorChoice + 
+                        evaluation.neatness + evaluation.completeness
+      const averageScore = (totalScore / 4).toFixed(1)
+
+      // 3. สร้าง HTML template สำหรับแปลงเป็น PDF (รองรับภาษาไทย - จัดให้พอดี 1 หน้า)
+      const reportElement = document.createElement('div')
+      reportElement.style.cssText = `
+        width: 794px;
+        background: white;
+        padding: 25px 30px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        position: absolute;
+        left: -9999px;
+        top: 0;
+      `
+
+      reportElement.innerHTML = `
+        <div style="background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%); padding: 18px; border-radius: 12px; text-align: center; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+          <h1 style="color: white; margin: 0 0 6px 0; font-size: 26px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">🎨 แบบประเมินกิจกรรมระบายสี</h1>
+          <p style="color: white; margin: 0; font-size: 13px; opacity: 0.95;">Coloring Activity Evaluation Report</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #e9ecef;">
+            <h2 style="color: #667eea; margin: 0 0 10px 0; font-size: 15px; border-bottom: 2px solid #667eea; padding-bottom: 6px;">📋 ข้อมูลกิจกรรม</h2>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>สัปดาห์ที่:</strong> ${weekNumber || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>สาระการเรียนรู้:</strong> ${learningSubject || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>หน่วยการเรียนรู้:</strong> ${learningUnit || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>ครูผู้รับผิดชอบ:</strong> ${responsibleTeacher || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>ผู้ทดสอบ:</strong> ${testerName || '-'}</p>
+            <p style="margin: 4px 0; color: #495057; font-size: 12px;"><strong>วันที่:</strong> ${new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          </div>
+
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; border: 2px solid #e9ecef;">
+            <h2 style="color: #667eea; margin: 0 0 10px 0; font-size: 15px; border-bottom: 2px solid #667eea; padding-bottom: 6px;">📊 การประเมิน</h2>
+            ${[
+              { label: 'ความคิดสร้างสรรค์', score: evaluation.creativity },
+              { label: 'การเลือกใช้สี', score: evaluation.colorChoice },
+              { label: 'ความเรียบร้อย', score: evaluation.neatness },
+              { label: 'ความสมบูรณ์', score: evaluation.completeness }
+            ].map(item => {
+              const percentage = (item.score / 5) * 100
+              const color = item.score >= 4 ? '#4CAF50' : item.score >= 3 ? '#FFC107' : '#f44336'
+              return `
+                <div style="margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span style="font-weight: 600; color: #333; font-size: 11px;">${item.label}</span>
+                    <span style="font-weight: 700; color: ${color}; font-size: 12px;">${item.score}/5</span>
+                  </div>
+                  <div style="background: #e9ecef; height: 18px; border-radius: 9px; overflow: hidden;">
+                    <div style="background: ${color}; width: ${percentage}%; height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px;">
+                      <span style="color: white; font-size: 10px; font-weight: 600;">${percentage.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                </div>
+              `
+            }).join('')}
+            
+            <div style="background: linear-gradient(135deg, #FF6B9D 0%, #FFC75F 100%); padding: 12px; border-radius: 10px; margin-top: 12px; text-align: center; box-shadow: 0 3px 10px rgba(255,107,157,0.3);">
+              <span style="color: white; font-size: 13px; font-weight: 600;">คะแนนเฉลี่ย: </span>
+              <span style="color: white; font-size: 24px; font-weight: 700; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);">${averageScore}/5</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+          <h2 style="color: #667eea; margin: 0 0 10px 0; font-size: 16px; border-bottom: 2px solid #667eea; padding-bottom: 6px;">🖼️ ผลงานนักเรียน</h2>
+          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 12px; border: 2px solid #e9ecef;">
+            <img src="${artworkDataUrl}" style="max-width: 100%; max-height: 400px; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);" />
+          </div>
+        </div>
+
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px dashed #dee2e6;">
+          <div style="text-align: center;">
+            <p style="margin: 0 0 5px 0; color: #333; font-size: 11px;">ลงชื่อ ..............................................</p>
+            <p style="margin: 0 0 15px 0; color: #6c757d; font-size: 10px;">ครูผู้รับผิดชอบ</p>
+            <p style="margin: 0; color: #333; font-size: 11px;">( ${responsibleTeacher || '............................................'} )</p>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid #dee2e6;">
+          <p style="margin: 0; color: #adb5bd; font-size: 9px;">สร้างโดยระบบ Classroom Games | ${new Date().toLocaleString('th-TH')}</p>
+        </div>
+      `
+
+      document.body.appendChild(reportElement)
+
+      document.body.appendChild(reportElement)
+
+      // 4. แปลง HTML เป็นรูปภาพด้วย html2canvas
+      const canvas = await html2canvas(reportElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      })
+
+      // 5. ลบ element ออกจาก DOM
+      document.body.removeChild(reportElement)
+
+      // 6. สร้าง PDF และใส่รูปภาพ
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      
+      // คำนวณขนาดรูปให้พอดีกับหน้า A4
+      const imgWidth = pdfWidth
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width
+      
+      // ถ้ารูปสูงเกินหน้า A4 ให้แบ่งเป็นหลายหน้า
+      if (imgHeight > pdfHeight) {
+        let heightLeft = imgHeight
+        let position = 0
+        
+        // หน้าแรก
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pdfHeight
+        
+        // หน้าถัดไป
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight
+          pdf.addPage()
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+          heightLeft -= pdfHeight
+        }
+      } else {
+        // ใส่รูปลงในหน้าเดียว
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      }
+
+      // 7. บันทึกไฟล์
+      const fileName = `แบบประเมินระบายสี-สัปดาห์${weekNumber || 'X'}-${Date.now()}.pdf`
+      pdf.save(fileName)
+
       audioManager.playSuccess()
-      alert('บันทึกภาพเรียบร้อย! 🎉')
+      alert('ส่งออก PDF เรียบร้อย! 🎉')
+      setShowEvaluation(false)
+      
+      // รีเซ็ตฟอร์มประเมิน
+      setEvaluation({
+        creativity: 5,
+        colorChoice: 5,
+        neatness: 5,
+        completeness: 5
+      })
+
+    } catch (error) {
+      console.error('Error exporting PDF:', error)
+      alert('เกิดข้อผิดพลาดในการส่งออก PDF กรุณาลองใหม่อีกครั้ง')
     }
   }
 
@@ -350,6 +518,12 @@ function PlayColoring() {
   }
 
   const handleSaveActivity = () => {
+    // ถ้าอยู่ในโหมดแก้ไข
+    if (editingActivityId) {
+      handleUpdateActivity()
+      return
+    }
+
     if (!selectedImageUrl) {
       alert('กรุณาเลือกรูปภาพก่อน!')
       return
@@ -381,6 +555,48 @@ function PlayColoring() {
     setShowActivityList(false)
     audioManager.playClick()
     alert('โหลดกิจกรรมเรียบร้อย!')
+  }
+
+  const handleDeleteActivity = (activityId: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('ต้องการลบกิจกรรมนี้?')) return
+    
+    const updated = savedActivities.filter(a => a.id !== activityId)
+    setSavedActivities(updated)
+    localStorage.setItem('coloringActivities', JSON.stringify(updated))
+    audioManager.playClick()
+  }
+
+  const handleEditActivity = (activity: any, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingActivityId(activity.id)
+    handleLoadActivity(activity)
+  }
+
+  const handleUpdateActivity = () => {
+    if (!editingActivityId) return
+    if (!selectedImageUrl) {
+      alert('กรุณาเลือกรูปภาพก่อน!')
+      return
+    }
+
+    const updated = savedActivities.map(a => 
+      a.id === editingActivityId ? {
+        ...a,
+        weekNumber,
+        learningSubject,
+        learningUnit,
+        responsibleTeacher,
+        testerName,
+        imageUrl: selectedImageUrl,
+      } : a
+    )
+
+    setSavedActivities(updated)
+    localStorage.setItem('coloringActivities', JSON.stringify(updated))
+    setEditingActivityId(null)
+    audioManager.playSuccess()
+    alert('อัปเดตกิจกรรมสำเร็จ!')
   }
 
   const handleStartActivity = () => {
@@ -531,10 +747,27 @@ function PlayColoring() {
             <button 
               className="action-btn save-btn"
               onClick={handleSaveActivity}
-              title="บันทึกรูปและข้อมูลกิจกรรม"
+              title={editingActivityId ? "อัปเดตกิจกรรม" : "บันทึกรูปและข้อมูลกิจกรรม"}
             >
-              บันทึกกิจกรรม
+              {editingActivityId ? 'อัปเดตกิจกรรม' : 'บันทึกกิจกรรม'}
             </button>
+            {editingActivityId && (
+              <button 
+                className="action-btn cancel-btn"
+                onClick={() => {
+                  setEditingActivityId(null)
+                  setWeekNumber('')
+                  setLearningSubject('')
+                  setLearningUnit('')
+                  setResponsibleTeacher('')
+                  setTesterName('')
+                  audioManager.playClick()
+                }}
+                title="ยกเลิกการแก้ไข"
+              >
+                ✕ ยกเลิก
+              </button>
+            )}
             <button 
               className="action-btn select-btn"
               onClick={() => setShowActivityList(true)}
@@ -565,11 +798,27 @@ function PlayColoring() {
                       <img src={activity.imageUrl} alt="รูปกิจกรรม" />
                       <div className="activity-info">
                         <h3>สัปดาห์ที่ {activity.weekNumber}</h3>
-                        <p><strong>สาระ:</strong> {activity.learningSubject}</p>
-                        <p><strong>หน่วย:</strong> {activity.learningUnit}</p>
-                        <p><strong>ครู:</strong> {activity.responsibleTeacher}</p>
+                        <p><strong>สาระ:</strong> {activity.learningSubject || '-'}</p>
+                        <p><strong>หน่วย:</strong> {activity.learningUnit || '-'}</p>
+                        <p><strong>ครู:</strong> {activity.responsibleTeacher || '-'}</p>
                         {activity.testerName && <p><strong>ผู้ทดสอบ:</strong> {activity.testerName}</p>}
                         <p className="date">{activity.createdAt}</p>
+                      </div>
+                      <div className="activity-actions">
+                        <button 
+                          className="edit-activity-btn"
+                          onClick={(e) => handleEditActivity(activity, e)}
+                          title="แก้ไขกิจกรรม"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="delete-activity-btn"
+                          onClick={(e) => handleDeleteActivity(activity.id, e)}
+                          title="ลบกิจกรรม"
+                        >
+                          🗑️
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -662,6 +911,96 @@ function PlayColoring() {
         <div className="mascot-avatar">🦊</div>
         <div className="mascot-speech">วาดสวย ๆ นะ!</div>
       </div>
+
+      {/* Evaluation Modal */}
+      {showEvaluation && (
+        <div className="modal-overlay evaluation-modal">
+          <div className="modal-content evaluation-content">
+            <h2>ประเมินผลงาน</h2>
+            <button className="close-btn" onClick={() => setShowEvaluation(false)}>✕</button>
+            
+            <div className="evaluation-form">
+              <div className="evaluation-item">
+                <label>ความคิดสร้างสรรค์ (Creativity)</label>
+                <div className="score-selector">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <button
+                      key={score}
+                      className={`score-btn ${evaluation.creativity === score ? 'active' : ''}`}
+                      onClick={() => setEvaluation(prev => ({ ...prev, creativity: score }))}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="evaluation-item">
+                <label>การเลือกใช้สี (Color Choice)</label>
+                <div className="score-selector">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <button
+                      key={score}
+                      className={`score-btn ${evaluation.colorChoice === score ? 'active' : ''}`}
+                      onClick={() => setEvaluation(prev => ({ ...prev, colorChoice: score }))}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="evaluation-item">
+                <label>ความเรียบร้อย (Neatness)</label>
+                <div className="score-selector">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <button
+                      key={score}
+                      className={`score-btn ${evaluation.neatness === score ? 'active' : ''}`}
+                      onClick={() => setEvaluation(prev => ({ ...prev, neatness: score }))}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="evaluation-item">
+                <label>ความสมบูรณ์ (Completeness)</label>
+                <div className="score-selector">
+                  {[1, 2, 3, 4, 5].map(score => (
+                    <button
+                      key={score}
+                      className={`score-btn ${evaluation.completeness === score ? 'active' : ''}`}
+                      onClick={() => setEvaluation(prev => ({ ...prev, completeness: score }))}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="evaluation-summary">
+                <div className="total-score">
+                  <span>คะแนนเฉลี่ย:</span>
+                  <span className="score-value">
+                    {((evaluation.creativity + evaluation.colorChoice + evaluation.neatness + evaluation.completeness) / 4).toFixed(1)} / 5
+                  </span>
+                </div>
+              </div>
+
+              <div className="evaluation-actions">
+                <button className="cancel-eval-btn" onClick={() => setShowEvaluation(false)}>
+                  ยกเลิก
+                </button>
+                <button className="export-pdf-btn" onClick={handleExportPDF}>
+                  📄 ส่งออก PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
